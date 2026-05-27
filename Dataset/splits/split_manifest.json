@@ -1,0 +1,24 @@
+{
+  "source": "Dataset/DIVE_Labels.csv",
+  "source_rows": 22330,
+  "split_ratios": {
+    "train": 0.7,
+    "val": 0.1,
+    "test": 0.2
+  },
+  "random_state": 42,
+  "train_rows": 15631,
+  "val_rows": 2233,
+  "test_rows": 4466,
+  "created_utc": "2026-05-27T02:57:25.007664+00:00",
+  "method": "MultilabelStratifiedShuffleSplit (iterative-stratification), two-stage",
+  "locked_sha256": {
+    "Val": "62bd33c5a6a2617de1ce881ab41be8fb79c2568090aa884d6a91c88569048dc7",
+    "Test": "9b614b9f05686726f6cd202dc9f7746ca5513642db03d7950a95bc987af06716"
+  },
+  "read_deny_list": [
+    "Dataset/DIVE_Labels.csv",
+    "Dataset/splits/Val_Labels.csv",
+    "Dataset/splits/Test_Labels.csv"
+  ]
+}

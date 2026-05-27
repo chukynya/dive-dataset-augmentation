@@ -1,0 +1,17 @@
+# --- Large raw data (keep out of git) ---
+Dataset/Bytecode_filled.csv
+Dataset/Transaction-based.csv
+Dataset/DIVE_Labels.csv
+Dataset/*.bak
+
+# --- Large corpora / generated output trees ---
+Dataset/Source/
+Dataset/buggy/
+Dataset/final/
+
+# --- Upstream tool clone (reproducible via work/scripts) ---
+work/SolidiFI/
+
+# --- Python caches ---
+__pycache__/
+*.pyc
