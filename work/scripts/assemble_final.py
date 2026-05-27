@@ -81,10 +81,9 @@ def main():
     n_val = copy_split_sol(val.contractID.astype(str), os.path.join(FINAL, "val"))
     n_test = copy_split_sol(test.contractID.astype(str), os.path.join(FINAL, "test"))
 
-    # ---- injected .sol + bytecode into train/ and train/bytecode/ ----
-    bc_dir = os.path.join(FINAL, "train", "bytecode")
-    os.makedirs(bc_dir, exist_ok=True)
-    n_inj = n_bin = 0
+    # ---- injected .sol into train/ ----
+    n_inj = 0
+    inj_ids = set()
     for bug_type in sorted(os.listdir(BUGGY)) if os.path.isdir(BUGGY) else []:
         d = os.path.join(BUGGY, bug_type)
         if not os.path.isdir(d):
@@ -92,18 +91,30 @@ def main():
         for f in os.listdir(d):
             if f.endswith(".sol"):
                 shutil.copyfile(os.path.join(d, f), os.path.join(FINAL, "train", f))
+                inj_ids.add(f[:-4])
                 n_inj += 1
-            elif f.endswith(".bin.json"):
-                shutil.copyfile(os.path.join(d, f), os.path.join(bc_dir, f))
-                n_bin += 1
 
-    print(f"train: {n_tr} real .sol + {n_inj} injected .sol ; bytecode files: {n_bin}")
+    # ---- bytecode: ONE CSV (Bytecode_filled schema), not per-file json ----
+    staging = os.path.join(ROOT, "work", "cache", "synthetic_bytecode.csv")
+    bc = pd.read_csv(staging, dtype=str).fillna("")
+    bc.to_csv(os.path.join(FINAL, "Synthetic_Bytecode.csv"), index=False)
+    assert list(bc.columns) == ["contractID", "contractAddress", "bytecode"], bc.columns.tolist()
+    n_bin = len(bc)
+
+    print(f"train: {n_tr} real .sol + {n_inj} injected .sol")
     print(f"val: {n_val} .sol ; test: {n_test} .sol")
+    print(f"Synthetic_Bytecode.csv rows: {n_bin}")
     print(f"final Train_Labels rows: {len(train) + len(appended)} "
           f"(= {len(train)} real + {len(appended)} injected)")
-    # invariant: one bytecode per injected sol
-    assert n_bin == n_inj == len(appended), (n_bin, n_inj, len(appended))
-    print("invariant OK: injected .sol == bytecode files == appended label rows ==", len(appended))
+    # invariants
+    assert n_inj == len(appended) == n_bin, (n_inj, len(appended), n_bin)
+    assert inj_ids == set(appended["contractID"]) == set(bc["contractID"]), "id mismatch across sol/labels/bytecode"
+    assert all(len(x) > 0 for x in bc["bytecode"]), "empty bytecode present"
+    # disjoint single-use bases + all bases are train IDs (no leakage)
+    bases = [cid.split("_")[1] for cid in appended["contractID"]]
+    assert len(bases) == len(set(bases)), "a base was reused (not disjoint)"
+    assert set(bases) <= set(train.contractID), "an injected base is not a train ID"
+    print(f"invariants OK: injected .sol == labels == bytecode == {n_inj}; bases disjoint & train-only")
 
 
 if __name__ == "__main__":

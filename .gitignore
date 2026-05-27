@@ -9,6 +9,9 @@ Dataset/Source/
 Dataset/buggy/
 Dataset/final/
 
+# --- Large regenerable injection cache (>100MB; rebuilt by incontainer_inject.py) ---
+work/cache/synthetic_bytecode.csv
+
 # --- Upstream tool clone (reproducible via work/scripts) ---
 work/SolidiFI/
 
