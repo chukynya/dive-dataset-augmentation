@@ -8,7 +8,13 @@ snippets, scripts, `Source/`, the prebuilt job list) is mounted from this repo.
 
 ## What to copy to the other PC
 
-Two things, into the same parent folder:
+> **Easiest path: `git clone` with Git LFS.** Both `Dataset.zip` and
+> `solidifi-multi.tar` are stored in Git LFS, so if you `git lfs install` first
+> and then clone, you get the repo *and* the Docker image tarball in one step —
+> skip the manual copy below. See "Cloning (with Git LFS)" in the root README.
+> (Then `unzip Dataset.zip` if the `Dataset/` tree isn't already present.)
+
+If you'd rather copy files manually, two things, into the same parent folder:
 
 1. **This whole repo folder** (`dataset-generation/`). The big part is
    `Dataset/Source/` (22,330 `.sol` files). The prebuilt inputs the run needs

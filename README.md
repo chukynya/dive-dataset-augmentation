@@ -18,6 +18,41 @@ complete instruction set.
 
 ---
 
+## Cloning (with Git LFS)
+
+The two large binaries — `Dataset.zip` (~363 MB) and `solidifi-multi.tar` (~184 MB,
+the prebuilt Docker image) — are stored in **Git LFS**, so you must have git-lfs
+installed *before* cloning for them to download automatically.
+
+```bash
+# 1. Install git-lfs once per machine:
+#    macOS:           brew install git-lfs
+#    Debian/Ubuntu:   sudo apt-get install git-lfs
+#    Windows:         ships with Git for Windows, or https://git-lfs.com
+git lfs install
+
+# 2. Clone — the LFS files come down automatically:
+git clone https://github.com/chukynya/dive-dataset-augmentation.git
+```
+
+Already cloned **without** git-lfs? You'll have small pointer files instead of the
+real binaries. Fix it with:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+Verify you got the real files (not pointers): `git lfs ls-files` should list both,
+and their sizes should be ~363 MB / ~184 MB.
+
+> [!NOTE]
+> GitHub's free LFS tier is **1 GB storage + 1 GB/month bandwidth**. Each full
+> clone/pull of these files draws on that monthly bandwidth, so frequent clones
+> can hit the limit.
+
+---
+
 ## The 8 Labels
 
 `Reentrancy`, `Access Control`, `Arithmetic`, `Unchecked Return Values`, `DoS`,
