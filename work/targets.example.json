@@ -1,0 +1,11 @@
+{
+  "_comment": "Per-class augmentation tuning. Copy this file to work/targets.json and edit. 'target' = how many synthetic contracts to emit for that class. 'cap' = how many injection jobs to queue (must be >= target; absorbs injection + dedup attrition, and is the ceiling for run-time re-tuning). bug_type is fixed and not tunable here. Any class you omit keeps the built-in default.",
+  "Front Running":           {"target": 3500, "cap": 4800},
+  "Bad Randomness":          {"target": 3500, "cap": 4800},
+  "DoS":                     {"target": 3500, "cap": 4800},
+  "Reentrancy":              {"target": 500,  "cap": 900},
+  "Access Control":          {"target": 500,  "cap": 900},
+  "Arithmetic":              {"target": 500,  "cap": 900},
+  "Unchecked Return Values": {"target": 500,  "cap": 900},
+  "Time manipulation":       {"target": 500,  "cap": 900}
+}

@@ -15,15 +15,20 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, "work", "scripts"))
+from canon_bytecode import canon_hash  # noqa: E402
+
 DATASET = os.path.join(ROOT, "Dataset")
 SPLITS = os.path.join(DATASET, "splits")
 SOURCE = os.path.join(DATASET, "Source")
 BUGGY = os.path.join(DATASET, "buggy")
 FINAL = os.path.join(DATASET, "final")
+CACHE = os.path.join(ROOT, "work", "cache")
 LABELS = ["Reentrancy", "Access Control", "Arithmetic", "Unchecked Return Values",
           "DoS", "Bad Randomness", "Front Running", "Time manipulation"]
 
@@ -110,11 +115,31 @@ def main():
     assert n_inj == len(appended) == n_bin, (n_inj, len(appended), n_bin)
     assert inj_ids == set(appended["contractID"]) == set(bc["contractID"]), "id mismatch across sol/labels/bytecode"
     assert all(len(x) > 0 for x in bc["bytecode"]), "empty bytecode present"
-    # disjoint single-use bases + all bases are train IDs (no leakage)
+    # bases reused across bug types: enforce (base,bug) row uniqueness + train-only bases
+    assert appended["contractID"].is_unique, "duplicate synthetic contractID (base,bug) row"
     bases = [cid.split("_")[1] for cid in appended["contractID"]]
-    assert len(bases) == len(set(bases)), "a base was reused (not disjoint)"
     assert set(bases) <= set(train.contractID), "an injected base is not a train ID"
-    print(f"invariants OK: injected .sol == labels == bytecode == {n_inj}; bases disjoint & train-only")
+    print(f"invariants OK: injected .sol == labels == bytecode == {n_inj}; "
+          f"rows unique & all bases train-only ({len(set(bases))} distinct bases reused)")
+
+    # ---- BYTECODE LEAKAGE ASSERT: train (real+synthetic) disjoint from val/test ----
+    real_canon = json.load(open(os.path.join(CACHE, "real_canon_bytecode.json")))
+    holdout = set(json.load(open(os.path.join(CACHE, "holdout_canon_hashes.json"))))
+    train_real_hashes = {real_canon[c] for c in train.contractID if c in real_canon}
+    synth_hashes = {canon_hash(x) for x in bc["bytecode"] if x}
+    train_all = train_real_hashes | synth_hashes
+    overlap = train_all & holdout
+    assert not overlap, f"BYTECODE LEAKAGE: {len(overlap)} train hashes appear in val/test"
+    # synthetic rows must also be internally unique (no two injected contracts share bytecode)
+    assert len(synth_hashes) == n_bin, \
+        f"synthetic bytecode not unique: {n_bin} rows -> {len(synth_hashes)} hashes"
+    # and disjoint from the real train contracts (no augment is a byte-identical clone)
+    synth_real_overlap = synth_hashes & train_real_hashes
+    assert not synth_real_overlap, \
+        f"{len(synth_real_overlap)} synthetic bytecodes duplicate a real train contract"
+    print(f"bytecode-leakage assert OK: 0 of {len(train_all)} train canon-hashes "
+          f"intersect {len(holdout)} holdout hashes; {len(synth_hashes)} unique synthetic "
+          f"(disjoint from {len(train_real_hashes)} real-train hashes)")
 
 
 if __name__ == "__main__":
