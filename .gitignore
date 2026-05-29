@@ -15,6 +15,11 @@ work/cache/synthetic_bytecode.csv
 # --- Upstream tool clone (reproducible via work/scripts) ---
 work/SolidiFI/
 
+# --- Shipped out-of-band, not via git (see work/SETUP_OTHER_PC.md) ---
+# Docker image tarball (~184MB) and dataset zip (~363MB) exceed GitHub's limit.
+*.tar
+*.zip
+
 # --- Python caches ---
 __pycache__/
 *.pyc
