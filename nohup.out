@@ -1,0 +1,22 @@
+[*] repo: /mnt/wsl/docker-desktop-bind-mounts/Ubuntu/a670df96609dcd24ba80ecba365d4f4e84495edec7a261cb08365069947bbe36
+[*] inputs present
+[*] Sat May 30 21:56:59 WIB 2026 starting injection ...
+applied run-time target overrides from work/targets.json: {'Front Running': 3000, 'Bad Randomness': 3000, 'DoS': 3000, 'Reentrancy': 500, 'Access Control': 500, 'Arithmetic': 500, 'Unchecked Return Values': 500, 'Time manipulation': 500}
+effective per-class targets: {'Front Running': 3000, 'Bad Randomness': 3000, 'DoS': 3000, 'Reentrancy': 500, 'Access Control': 500, 'Arithmetic': 500, 'Unchecked Return Values': 500, 'Time manipulation': 500} | total: 11500 | queued jobs: 70936
+resume: found 4 already-emitted | per-class done: {'Front Running': 0, 'Bad Randomness': 0, 'DoS': 0, 'Reentrancy': 0, 'Access Control': 4, 'Arithmetic': 0, 'Unchecked Return Values': 0, 'Time manipulation': 0} | consumed bases: 4
+Traceback (most recent call last):
+  File "incontainer_inject.py", line 227, in <module>
+    main()
+  File "incontainer_inject.py", line 180, in main
+    sol, log = inject(cid, bug)
+  File "incontainer_inject.py", line 38, in inject
+    p = subprocess.run(["python3", "solidifi.py", "-i", f"{SRC}/{cid}.sol", bug],
+  File "/usr/lib/python3.8/subprocess.py", line 495, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+  File "/usr/lib/python3.8/subprocess.py", line 1028, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+  File "/usr/lib/python3.8/subprocess.py", line 1868, in _communicate
+    ready = selector.select(timeout)
+  File "/usr/lib/python3.8/selectors.py", line 415, in select
+    fd_event_list = self._selector.poll(timeout)
+KeyboardInterrupt

@@ -27,7 +27,7 @@ DATASET = os.path.join(ROOT, "Dataset")
 SPLITS = os.path.join(DATASET, "splits")
 SOURCE = os.path.join(DATASET, "Source")
 BUGGY = os.path.join(DATASET, "buggy")
-FINAL = os.path.join(DATASET, "final")
+FINAL = os.environ.get("FINAL_DIR", os.path.join(DATASET, "final"))
 CACHE = os.path.join(ROOT, "work", "cache")
 LABELS = ["Reentrancy", "Access Control", "Arithmetic", "Unchecked Return Values",
           "DoS", "Bad Randomness", "Front Running", "Time manipulation"]
@@ -72,17 +72,40 @@ def main():
 
     append_path = os.path.join(SPLITS, "Train_Labels_append.csv")
     appended = pd.read_csv(append_path)
+    appended["contractID"] = appended["contractID"].astype(str)
+
+    # ---- drop-original (DROP_ORIGINAL=1, default): each injected base replaces
+    # its clean twin. The buggy contract inherited the base's real labels
+    # (OR-merge at injection), so dropping the clean base keeps every real
+    # positive while removing one majority-class negative. Train size stays
+    # ~constant (exactly so in DISJOINT mode, where each base is injected once).
+    # Set DROP_ORIGINAL=0 for the legacy additive mode (keep base + add buggy).
+    drop_original = os.environ.get("DROP_ORIGINAL", "1") != "0"
+    orig_train_ids = set(train.contractID)
+    inj_bases = {cid.split("_")[1] for cid in appended["contractID"]}
+    assert inj_bases <= orig_train_ids, "an injected base is not a train ID"
+    if drop_original:
+        kept = train[~train.contractID.isin(inj_bases)].reset_index(drop=True)
+        print(f"drop-original: {len(train)} real - {len(inj_bases)} injected bases "
+              f"= {len(kept)} kept real + {len(appended)} buggy "
+              f"= {len(kept) + len(appended)} train rows (was {len(train)} real)")
+    else:
+        kept = train
+        print(f"additive: {len(train)} real + {len(appended)} buggy "
+              f"= {len(kept) + len(appended)} train rows")
 
     os.makedirs(FINAL, exist_ok=True)
 
     # ---- label CSVs ----
-    pd.concat([train, appended], ignore_index=True).to_csv(
+    pd.concat([kept, appended], ignore_index=True).to_csv(
         os.path.join(FINAL, "Train_Labels.csv"), index=False)
     shutil.copyfile(os.path.join(SPLITS, "Val_Labels.csv"), os.path.join(FINAL, "Val_Labels.csv"))
     shutil.copyfile(os.path.join(SPLITS, "Test_Labels.csv"), os.path.join(FINAL, "Test_Labels.csv"))
 
-    # ---- .sol files ----
-    n_tr = copy_split_sol(train.contractID, os.path.join(FINAL, "train"))
+    # ---- .sol files (drop-original: only the kept real bases) ----
+    print(f"copying {len(kept)}+{len(val)}+{len(test)} real .sol into final/ "
+          "(slow over a bind mount, ~minutes; not hung) ...", flush=True)
+    n_tr = copy_split_sol(kept.contractID, os.path.join(FINAL, "train"))
     n_val = copy_split_sol(val.contractID.astype(str), os.path.join(FINAL, "val"))
     n_test = copy_split_sol(test.contractID.astype(str), os.path.join(FINAL, "test"))
 
@@ -109,8 +132,8 @@ def main():
     print(f"train: {n_tr} real .sol + {n_inj} injected .sol")
     print(f"val: {n_val} .sol ; test: {n_test} .sol")
     print(f"Synthetic_Bytecode.csv rows: {n_bin}")
-    print(f"final Train_Labels rows: {len(train) + len(appended)} "
-          f"(= {len(train)} real + {len(appended)} injected)")
+    print(f"final Train_Labels rows: {len(kept) + len(appended)} "
+          f"(= {len(kept)} kept real + {len(appended)} injected)")
     # invariants
     assert n_inj == len(appended) == n_bin, (n_inj, len(appended), n_bin)
     assert inj_ids == set(appended["contractID"]) == set(bc["contractID"]), "id mismatch across sol/labels/bytecode"

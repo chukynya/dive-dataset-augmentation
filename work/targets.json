@@ -1,0 +1,11 @@
+{
+  "_comment": "FULL CAMPAIGN: 3000 emitted per rare class (Front Running, Bad Randomness, DoS) + 500 per majority class, FULLY DISJOINT (each train base used by at most one class) and leakage-free. After the solidifi.py compile-check fix, measured injection yield is ~91% and ~12,370 of the 13,089 injectable bases are usable -- above the 11,500 total demand, so strict disjoint is feasible (validated host-side across 8 seeds). The build uses verify-and-keep: build_injection_jobs.py (disjoint) queues EVERY eligible base per class, scarce-first; incontainer_inject.py keeps a global consumed-set so each base emits once and failed injections cost nothing. 'cap' is unused in disjoint mode (kept >= target only to satisfy the build assert). Rebuild the job queue after editing this file, then run work/run_injection.sh.",
+  "Front Running":           {"target": 3000, "cap": 3000},
+  "Bad Randomness":          {"target": 3000, "cap": 3000},
+  "DoS":                     {"target": 3000, "cap": 3000},
+  "Reentrancy":              {"target": 500,  "cap": 500},
+  "Access Control":          {"target": 500,  "cap": 500},
+  "Arithmetic":              {"target": 500,  "cap": 500},
+  "Unchecked Return Values": {"target": 500,  "cap": 500},
+  "Time manipulation":       {"target": 500,  "cap": 500}
+}

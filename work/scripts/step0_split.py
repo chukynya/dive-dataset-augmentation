@@ -54,10 +54,15 @@ SEED = int(os.environ.get("SPLIT_SEED", "42"))
 #   TRAIN_FRAC=0.60 VAL_FRAC=0.20 TEST_FRAC=0.20 python work/scripts/step0_split.py
 # Re-running this invalidates everything downstream (jobs + augmentation): the
 # train pool, the locked val/test hashes, and the leakage gate all change. After
-# a re-split, rebuild jobs and re-run injection (see SETUP_OTHER_PC.md).
+# a re-split, rebuild jobs and re-run injection (see README.md).
 TRAIN_FRAC = float(os.environ.get("TRAIN_FRAC", "0.70"))
 VAL_FRAC = float(os.environ.get("VAL_FRAC", "0.10"))
 TEST_FRAC = float(os.environ.get("TEST_FRAC", "0.20"))
+# DEDUP=0 disables bytecode-duplicate collapsing: every raw contract becomes its
+# own split row. The canon (CBOR-stripped) hashes are still computed and used for
+# the synthetic leakage gate, but identical-bytecode contracts are NOT merged, so
+# they may land in different splits (accepted by the user; see README split note).
+DEDUP = os.environ.get("DEDUP", "1") != "0"
 assert abs(TRAIN_FRAC + VAL_FRAC + TEST_FRAC - 1.0) < 1e-9, \
     f"ratios must sum to 1: {TRAIN_FRAC}+{VAL_FRAC}+{TEST_FRAC}"
 
@@ -99,10 +104,10 @@ def main():
     print(f"raw contracts: {n_raw}  canon-hashed: {len(hashes)}  "
           f"no/invalid bytecode: {no_bc}")
 
-    # --- group by canon hash, OR-merge labels, pick representative ---
+    # --- group by canon hash (DEDUP), or one group per contract (DEDUP=0) ---
     by_hash = {}
     for cid in labels_df["contractID"]:
-        key = hashes.get(cid, f"__nobytecode__{cid}")
+        key = (hashes.get(cid, f"__nobytecode__{cid}") if DEDUP else cid)
         by_hash.setdefault(key, []).append(cid)
 
     int_ids = lambda lst: sorted(lst, key=lambda s: (len(s), s))
@@ -113,8 +118,11 @@ def main():
         merged = labels_df[labels_df["contractID"].isin(ids)][LABELS].max().astype(int)
         rows.append([rep] + merged.tolist())
     dedup = pd.DataFrame(rows, columns=["contractID"] + LABELS)
-    print(f"unique canon hashes (= deduped representatives): {len(dedup)}")
-    print(f"collapsed {n_raw - len(dedup)} duplicate-bytecode contracts")
+    if DEDUP:
+        print(f"unique canon hashes (= deduped representatives): {len(dedup)}")
+        print(f"collapsed {n_raw - len(dedup)} duplicate-bytecode contracts")
+    else:
+        print(f"DEDUP=0: splitting all {len(dedup)} raw contracts (no collapsing)")
 
     # --- stratified multi-label split on representatives ---
     # Stage 1: hold out (val+test) = 1 - TRAIN_FRAC. Stage 2: within that
@@ -168,11 +176,12 @@ def main():
         "source": "Dataset/DIVE_Labels.csv",
         "source_rows": n_raw,
         "bytecode_dedup": {
+            "enabled": DEDUP,
             "method": "canonical runtime bytecode "
                       "(Solidity CBOR metadata stripped, sha256)",
             "unique_representatives": len(dedup),
             "collapsed_duplicates": n_raw - len(dedup),
-            "label_merge_rule": "OR across each duplicate group",
+            "label_merge_rule": "OR across each duplicate group" if DEDUP else "n/a",
             "missing_bytecode_count": no_bc,
         },
         "split_ratios": {"train": TRAIN_FRAC, "val": VAL_FRAC, "test": TEST_FRAC},
