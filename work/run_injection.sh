@@ -22,6 +22,13 @@ export MSYS_NO_PATHCONV=1   # harmless on Linux/macOS; stops Git-Bash mangling -
 # repo root = parent of this script's dir
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
+# When run in a terminal, tee a full copy of this run's telemetry to
+# work/cache/run.log (screen + file). Skipped when output is already redirected
+# (e.g. nohup > run.log) so we don't fight that redirect for the same file.
+if [ -t 1 ]; then
+  mkdir -p work/cache
+  exec > >(tee work/cache/run.log) 2>&1
+fi
 IMAGE="solidifi-multi"
 TAR="$REPO/solidifi-multi.tar"
 
@@ -53,7 +60,7 @@ docker run --rm \
   -v "$REPO/work/SolidiFI:/solidifi" \
   -v "$REPO:/data" \
   -w /solidifi \
-  "$IMAGE" python3 incontainer_inject.py
+  "$IMAGE" python3 -u incontainer_inject.py
 echo "[*] $(date) injection done"
 
 # --- STEP 2: assemble final/ (also in-container, so host needs no Python) ---
@@ -61,5 +68,5 @@ echo "[*] $(date) assembling final/ ..."
 docker run --rm \
   -v "$REPO:/data" \
   -w /data \
-  "$IMAGE" python3 work/scripts/assemble_final.py
+  "$IMAGE" python3 -u work/scripts/assemble_final.py
 echo "[*] $(date) ALL DONE -> Dataset/final/"

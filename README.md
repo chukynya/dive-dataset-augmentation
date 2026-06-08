@@ -168,9 +168,32 @@ SolidiFI uses three injection approaches:
 
 > [!NOTE]
 > SolidiFI's 7 bug types cover 6 of the 8 DIVE labels. **DoS** and **Bad Randomness** are
-> not directly covered by SolidiFI's built-in bug snippets. These may require custom bug
-> snippets to be added to the `bugs/` directory (see Section B below), or alternative
-> augmentation strategies.
+> not directly covered by upstream SolidiFI; this repo ships custom snippets for both in
+> `bugs/DoS/` and `bugs/Bad-Randomness/` (see Section B below).
+
+### Solidity-version-aware injection (0.4.x – 0.8.x)
+
+Upstream SolidiFI generates its AST with `solc --ast-json`, the *legacy* format that
+solc **removed in 0.8.0** — so the 0.8.x corpus (the majority of train) was unusable as
+injection bases. This fork is version-aware:
+
+- **Per-file compiler selection.** `version_utils.pick_solc` reads the file's pragma and
+  picks the matching installed solc; the image installs **every patch of every family**
+  (0.4.0–0.4.26 … 0.8.0–0.8.26) so even exact-pinned contracts (`pragma solidity 0.8.19;`)
+  compile. Range pragmas (`^`, `>=`) resolve to the minor head.
+- **0.8 AST.** For the `v08` family the engine emits `--ast-compact-json` and adapts it
+  (compact `nodeType` → the `name` field the locator expects); ≤0.7 still uses `--ast-json`.
+- **Version-specific bug snippets.** `bugs/<type>/v04/` and `bugs/<type>/v08/` hold
+  family-tuned snippets. The 0.8 set uses idiomatic 0.8 syntax — `Overflow-Underflow`
+  wrapped in `unchecked { }` (0.8 reverts on wraparound, so without it there is no bug),
+  `now`→`block.timestamp`, `payable(x).transfer/send`, `.call{value: a}("")`. Families
+  without a dedicated dir fall back to the default `bugs/<type>/{ts,tf}/` set.
+
+**Disjoint bases.** With the 0.8 corpus unlocked there are enough injectable bases
+(~14k) that `build_injection_jobs.py` assigns each base to **at most one** class/bug_type
+by default (no cross-class reuse). Set `DISJOINT_BASES=0` to fall back to independent
+per-class draws if your installed-solc coverage yields too few bases (the builder warns
+when any class is queued below target).
 
 ### SolidiFI Usage
 

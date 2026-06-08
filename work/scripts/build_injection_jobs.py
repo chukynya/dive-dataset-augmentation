@@ -10,18 +10,22 @@ NO LEAKAGE:
 Per-class TARGET and CAP are hardcoded below — this is a campaign-specific
 script, not a reusable library. Edit TARGETS to change the run.
 
-BASE REUSE: only ~5,300 train contracts have a pragma matching an installed
-solc (most of the rest are 0.8.x, which SolidiFI's legacy --ast-json can't
-handle). Single-use bases would cap the campaign at ~5,300 synthetics. To reach
-the requested 2-3x, each base may be reused ACROSS DIFFERENT bug types (at most
-once per type). Different bug type -> different injected snippet -> different
-bytecode, and the in-container canon-hash gate rejects any injected contract
+DISJOINT BASES (default): now that the 0.8-aware engine compiles the 0.8.x
+corpus (the majority of train), ~14k bases are injectable -- enough that every
+synthetic can come from a DISTINCT base. The allocator partitions the injectable
+pool so each base is assigned to AT MOST ONE class/bug_type (no cross-class
+reuse). A two-pass, most-constrained-class-first allocation guarantees every
+class its `target` before any slack is spent toward `cap`. If a class still ends
+up queued < target, the run prints a loud warning (the pool is too small for a
+fully disjoint campaign at these targets).
+
+Set DISJOINT_BASES=0 to fall back to the legacy mode where each class draws
+independently from the full label=0 pool (a base may then recur across bug
+types). Either way the in-container canon-hash gate rejects any injected contract
 whose metadata-stripped bytecode duplicates another synthetic or a val/test
-contract. So every emitted row is still a distinct compiled program with zero
-holdout leakage; what's relaxed is structural diversity of the base skeletons.
+contract, so every emitted row is a distinct compiled program with zero leakage.
 
 Output: work/cache/injection_jobs.json = {targets:{...}, jobs:[{cid,target,bug_type,family,labels}]}
-Each (base, bug_type) pair is unique; a base may appear under multiple types.
 """
 import glob
 import json
@@ -100,9 +104,15 @@ def main():
     holdout = set(json.load(open(os.path.join(CACHE, "holdout_canon_hashes.json"))))
     real_canon = json.load(open(os.path.join(CACHE, "real_canon_bytecode.json")))
     leaks = [cid for cid in train_ids if real_canon.get(cid) in holdout]
-    assert not leaks, f"train-side bytecode leakage survived step0: {leaks[:5]}"
-    print(f"train_ids={len(train_ids)}  holdout_hashes={len(holdout)}  "
-          f"defensive check passed (zero train-side leaks)")
+    if os.environ.get("DEDUP", "1") != "0":
+        assert not leaks, f"train-side bytecode leakage survived step0: {leaks[:5]}"
+        print(f"train_ids={len(train_ids)}  holdout_hashes={len(holdout)}  "
+              f"defensive check passed (zero train-side leaks)")
+    else:
+        print(f"train_ids={len(train_ids)}  holdout_hashes={len(holdout)}  "
+              f"[DEDUP=0] {len(leaks)} train contracts share canonical bytecode with "
+              f"val/test (accepted: corpus dedup disabled; only affects REAL contracts). "
+              f"Synthetic augmentation is still gated against holdout in-container.")
 
     # --- resolve solc per train contract ---
     pragma_cache = json.load(open(os.path.join(CACHE, "train_pragma.json")))
@@ -120,16 +130,43 @@ def main():
     labels_of = {r["contractID"]: {c: int(r[c]) for c in LABELS} for _, r in tr.iterrows()}
 
     rng = __import__("random").Random(SEED)
+    disjoint = os.environ.get("DISJOINT_BASES", "1") != "0"
+    # A base is eligible for a class only if it is currently label=0 there, so
+    # injecting creates a genuinely new positive.
+    eligible = {cls: [c for c in solc_of if labels_of[c][cls] == 0] for cls in TARGETS}
+
+    # Class processing order: most-constrained (smallest eligible pool) first, so
+    # scarce classes get first pick of contested bases at run time.
+    emit_order = sorted(TARGETS, key=lambda c: len(eligible[c]))
+
+    if disjoint:
+        # Verify-and-keep disjoint: queue EVERY eligible base per class (shuffled),
+        # NOT a pre-reserved target/cap slice. The injector keeps a single global
+        # consumed-set, so each base emits for AT MOST ONE class and a FAILED
+        # injection costs nothing (it just falls through to the next eligible
+        # base). This shares the ~14% injection attrition across the whole pool
+        # instead of reserving a per-class buffer up front -- the only way the
+        # 13,089-base pool reaches 3000/3000/3000+500x5 (11,500) after attrition.
+        # Scarce-first ordering (emit_order) lets constrained classes claim bases
+        # before abundant ones drain the pool.
+        take_of = {}
+        for cls in emit_order:
+            pool = list(eligible[cls])
+            rng.shuffle(pool)
+            take_of[cls] = pool
+    else:
+        # Legacy: each class draws independently; a base may recur across types.
+        take_of = {cls: rng.sample(eligible[cls], min(TARGETS[cls]["cap"], len(eligible[cls])))
+                   for cls in TARGETS}
+
     jobs = []
-    summary = []
-    for cls, spec in TARGETS.items():
+    short = []
+    # Emit scarce-first so the injector meets constrained classes before abundant
+    # ones drain the shared base pool (matters for run-time disjoint contention).
+    for cls in emit_order:
+        spec = TARGETS[cls]
         bug = spec["bug_type"]
-        cap = spec["cap"]
-        # Bases reusable across classes: draw independently from the full
-        # injectable, label=0 pool for this class.
-        pool = [c for c in solc_of if labels_of[c][cls] == 0]
-        rng.shuffle(pool)
-        take = pool[:cap]
+        take = take_of[cls]
         for c in take:
             row = dict(labels_of[c])
             row[cls] = 1
@@ -141,9 +178,23 @@ def main():
                 "family": "v" + version_utils.major(solc_of[c]).split(".")[1].zfill(2),
                 "labels": [row[l] for l in LABELS],
             })
-        summary.append((cls, bug, len(pool), len(take), spec["target"]))
-        print(f"{cls:24s} -> {bug:18s} eligible={len(pool):5d} queued={len(take):5d} "
-              f"target={spec['target']}")
+        # In disjoint mode `take` is the full eligible list (an attrition buffer),
+        # so a build-time queue < target is normal; trouble is only when even the
+        # eligible pool (before attrition) can't cover the target.
+        gate = len(eligible[cls]) if disjoint else len(take)
+        if gate < spec["target"]:
+            short.append((cls, gate, spec["target"]))
+        print(f"{cls:24s} -> {bug:18s} eligible={len(eligible[cls]):5d} "
+              f"queued={len(take):5d} target={spec['target']} cap={spec['cap']}")
+
+    print(f"mode: {'DISJOINT (each base used once)' if disjoint else 'cross-class reuse'}")
+    if short:
+        print("\n[!] WARNING: pool too small for a fully disjoint campaign at these "
+              "targets -- the following classes have eligible pool BELOW target:")
+        for cls, q, t in short:
+            print(f"    {cls}: eligible={q} < target={t}")
+        print("    Raise 0.8 coverage, lower targets (work/targets.json), or set "
+              "DISJOINT_BASES=0 to allow cross-class base reuse.")
 
     out = {
         "labels_order": LABELS,
