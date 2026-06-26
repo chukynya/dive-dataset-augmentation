@@ -8,7 +8,8 @@ For each (solc version, snippet dir):
      collisions (which would silently drop bases at injection time);
   3. scan for synthetic-fingerprint tokens and self-labeling comments.
 
-Run: python work/scripts/check_snippets.py   (uses py-solc-x; 0.4.26 and 0.5.17 must be installed)
+Run: python work/scripts/check_snippets.py
+(uses py-solc-x; 0.4.26, 0.5.17, and 0.8.20 must be installed)
 """
 import os
 import re
@@ -21,8 +22,9 @@ BUGS = os.path.join(SOLIDIFI, "bugs")
 
 # (solc version, pragma, [(bug_type_dir, relative tf path)])
 SPECS = [
-    ("0.5.17", "^0.5.0", [("DoS", "tf"), ("Bad-Randomness", "tf")]),
+    ("0.5.17", "^0.5.0", [("DoS", "tf"), ("Bad-Randomness", "tf"), ("TOD", "tf")]),
     ("0.4.26", "^0.4.0", [("TOD", "v04/tf"), ("DoS", "v04/tf"), ("Bad-Randomness", "v04/tf")]),
+    ("0.8.20", "^0.8.0", [("DoS", "v08/tf"), ("Bad-Randomness", "v08/tf"), ("TOD", "v08/tf")]),
 ]
 
 FINGERPRINTS = ["_BR", "BR_", "_DoS", "DoS_", "_TOD", "TOD_", "_v04", "_v05",

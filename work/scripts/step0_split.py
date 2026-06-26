@@ -172,6 +172,21 @@ def main():
     with open(os.path.join(CACHE, "holdout_canon_hashes.json"), "w") as f:
         json.dump(holdout_hashes, f)
 
+    # Map every original contract (including deduped duplicates) to its rep's split.
+    # Used by assemble_final to expand all 22,330 originals back into the final CSVs.
+    hash_to_split = {hashes.get(r, f"__nobytecode__{r}"): s
+                     for r, s in rep_to_split.items()}
+    all_assignments = {}
+    for cid in labels_df["contractID"]:
+        h = hashes.get(cid, f"__nobytecode__{cid}")
+        all_assignments[cid] = hash_to_split.get(h, "train")
+    with open(os.path.join(CACHE, "all_split_assignments.json"), "w") as f:
+        json.dump(all_assignments, f)
+    print(f"all_split_assignments: {len(all_assignments)} contracts "
+          f"(train={sum(v=='train' for v in all_assignments.values())} "
+          f"val={sum(v=='val' for v in all_assignments.values())} "
+          f"test={sum(v=='test' for v in all_assignments.values())})")
+
     manifest = {
         "source": "Dataset/DIVE_Labels.csv",
         "source_rows": n_raw,

@@ -115,16 +115,24 @@ def main():
               f"Synthetic augmentation is still gated against holdout in-container.")
 
     # --- resolve solc per train contract ---
-    pragma_cache = json.load(open(os.path.join(CACHE, "train_pragma.json")))
+    # parse_pragma extracts the version string; pick_solc verifies an installed
+    # binary exists for it. We store the version string (not the binary path) so
+    # incontainer_inject.py can call pick_solc at runtime and the pre-flight check
+    # in run_injection.sh can install any missing versions.
     solc_of = {}
     for cid in train_ids:
         p = os.path.join(SOURCE, f"{cid}.sol")
         if not os.path.isfile(p):
             continue
         src = open(p, encoding="utf-8", errors="ignore").read()
-        v = version_utils.pick_solc(src)
+        v = version_utils.parse_pragma(src)
         if v:
-            solc_of[cid] = v
+            path = version_utils.pick_solc(v)
+            if path != "solc":
+                # Store the installed version, not the pragma spec, so the
+                # pre-flight installer in run_injection.sh never tries to fetch
+                # a version it already has (or a very old unsupported one).
+                solc_of[cid] = os.path.basename(path).replace("solc-v", "")
     print(f"{len(solc_of)} train bases have an installed solc")
 
     labels_of = {r["contractID"]: {c: int(r[c]) for c in LABELS} for _, r in tr.iterrows()}
@@ -165,6 +173,8 @@ def main():
     # ones drain the shared base pool (matters for run-time disjoint contention).
     for cls in emit_order:
         spec = TARGETS[cls]
+        if spec["target"] == 0:
+            take_of[cls] = []
         bug = spec["bug_type"]
         take = take_of[cls]
         for c in take:
@@ -175,7 +185,7 @@ def main():
                 "target": cls,
                 "bug_type": bug,
                 "solc": solc_of[c],
-                "family": "v" + version_utils.major(solc_of[c]).split(".")[1].zfill(2),
+                "family": version_utils.family(solc_of[c]),
                 "labels": [row[l] for l in LABELS],
             })
         # In disjoint mode `take` is the full eligible list (an attrition buffer),
