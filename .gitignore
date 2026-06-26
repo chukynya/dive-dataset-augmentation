@@ -9,8 +9,18 @@ Dataset/Source/
 Dataset/buggy/
 Dataset/final/
 
-# --- Large regenerable injection cache (>100MB; rebuilt by incontainer_inject.py) ---
+# --- Large regenerable injection cache (rebuilt by the pipeline) ---
 work/cache/synthetic_bytecode.csv
+work/cache/real_canon_bytecode.json
+work/cache/train_pragma.json
+work/cache/injection_jobs.json
+work/cache/injection_failed.json
+work/cache/all_split_assignments.json
+work/cache/run.log
+
+# --- Large dataset zips ---
+Dataset/*.zip
+Dataset/aug_data.zip
 
 # --- Upstream tool clone (reproducible via work/scripts) ---
 work/SolidiFI/
@@ -22,4 +32,7 @@ work/SolidiFI/
 # --- Python caches ---
 __pycache__/
 *.pyc
+
+# --- Local virtualenv ---
+.venv/
 

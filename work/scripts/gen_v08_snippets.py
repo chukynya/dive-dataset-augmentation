@@ -1,19 +1,19 @@
-"""Generate DIVERSE custom SolidiFI tf-snippets for DoS, Bad-Randomness, and TOD (solc-0.5 family).
+"""Generate DIVERSE solc-0.8-compatible tf-snippets for DoS, Bad-Randomness, and TOD.
 
-Each class gets a LIBRARY of structurally-distinct, realistic contract-body fragments
-(state vars + functions) inserted at function/block boundaries. solc-0.5.12+ compatible.
+0.8.x differences from 0.5.x:
+- `msg.sender` is `address` (not `address payable`); must cast: `payable(msg.sender).transfer()`
+- Non-payable `address` variables also need `payable(addr)` cast before .transfer()/.send()
+- `.call{value: amount}("")` (new-style); `.call.value(amount)()` removed
+- `block.difficulty` removed in 0.8.18 — use blockhash or keccak entropy instead
+- String/bytes params need `memory` keyword
+- `registry.length--` removed; use `.pop()`
 
-Why diverse (not one cloned template): SolidiFI injects a *sequence* of these files into
-each base (one per injection point), and the same files are reused across ~1,300 bases. A
-single repeated template + class-named identifiers (`_BR`, `_DoS`) becomes a lexical/structural
-shortcut a frozen encoder memorizes instead of learning the vulnerability concept — high train
-F1, poor transfer to the real test. Each fragment here is a different archetype with its OWN
-natural vocabulary (no `BR`/`DoS`/`v0x` token), so identifiers are unique across files (required:
-multiple fragments co-exist in one injected contract) and carry no synthetic fingerprint.
-No self-labeling comments (forbidden by the rulebook).
+Written to bugs/<Type>/v08/tf/ which the family-aware injector checks FIRST for v08 bases
+(before falling back to bugs/<Type>/tf/). Without this file the v08 family gets only the 4
+upstream SolidiFI defaults — causing the model to memorize those 4 bytecodes instead of
+learning the vulnerability concept.
 
-TOD coverage: v04 has its own set (gen_v04_snippets.py); this file fills the v05-v07 gap by
-writing bugs/TOD/tf/ (the fallback directory for those families).
+Same diversity and no-fingerprint rules as the other gen_* scripts.
 """
 import os
 
@@ -21,131 +21,8 @@ SOLIDIFI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 BUGS = os.path.join(SOLIDIFI, "bugs")
 
 # ---------------------------------------------------------------------------
-# Bad Randomness — entropy derived from miner/predictable on-chain values.
-# Distinct entropy sources & flows: blockhash, timestamp, number, difficulty,
-# gasleft, gasprice, contract balance, public-state LCG, leaky commit-reveal.
-# ---------------------------------------------------------------------------
-BAD_RANDOMNESS = [
-"""address payable[] public lotteryPlayers;
-uint256 public lotteryPot;
-function joinLottery() public payable {
-    lotteryPlayers.push(msg.sender);
-    lotteryPot += msg.value;
-}
-function drawLotteryWinner() public {
-    uint256 idx = uint256(blockhash(block.number - 1)) % lotteryPlayers.length;
-    lotteryPlayers[idx].transfer(lotteryPot);
-    lotteryPot = 0;
-}""",
-
-"""mapping(address => uint256) public coinflipStake;
-function placeCoinflip() public payable {
-    coinflipStake[msg.sender] = msg.value;
-}
-function resolveCoinflip() public {
-    if (block.timestamp % 2 == 0) {
-        msg.sender.transfer(coinflipStake[msg.sender] * 2);
-    }
-    coinflipStake[msg.sender] = 0;
-}""",
-
-"""uint256 public lastRoll;
-function rollDice() public returns (uint256) {
-    lastRoll = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender))) % 6 + 1;
-    return lastRoll;
-}""",
-
-"""mapping(address => uint256) public boostedReward;
-function claimBoost(uint256 base) public {
-    uint256 factor = gasleft() % 5 + 1;
-    boostedReward[msg.sender] = base * factor;
-}""",
-
-"""uint256 public ticketCount;
-mapping(uint256 => address) public ticketOwner;
-function buyTicket() public {
-    ticketOwner[ticketCount] = msg.sender;
-    ticketCount += 1;
-}
-function pickRaffle() public view returns (address) {
-    return ticketOwner[block.number % ticketCount];
-}""",
-
-"""address public prizeWinner;
-function spinPrize() public {
-    if (uint256(block.difficulty) % 7 == 0) {
-        prizeWinner = msg.sender;
-    }
-}""",
-
-"""uint8 public drawnCard;
-function drawCard() public {
-    drawnCard = uint8(uint256(blockhash(block.number - 1)) % 52);
-}""",
-
-"""uint256 public jackpotSeed;
-function rollJackpot() public {
-    jackpotSeed = uint256(keccak256(abi.encodePacked(address(this).balance, block.timestamp)));
-}
-function isJackpotHit() public view returns (bool) {
-    return jackpotSeed % 1000 == 0;
-}""",
-
-"""mapping(address => bytes32) public sealedGuess;
-function commitGuess(bytes32 commitment) public {
-    sealedGuess[msg.sender] = commitment;
-}
-function revealOutcome() public view returns (bool) {
-    return sealedGuess[msg.sender] == blockhash(block.number - 1);
-}""",
-
-"""uint256 public rngState = 12345;
-function nextRandom() public returns (uint256) {
-    rngState = (rngState * 1103515245 + 12345) % 2147483648;
-    return rngState;
-}""",
-
-"""uint256 public mintedRarity;
-function mintRare() public {
-    mintedRarity = uint256(keccak256(abi.encodePacked(block.timestamp, block.number))) % 100;
-}""",
-
-"""uint256 public wheelSlot;
-function spinWheel() public {
-    wheelSlot = (block.timestamp / 15) % 12;
-}""",
-
-"""uint256 public gasSeed;
-function seedFromGas() public {
-    gasSeed = uint256(keccak256(abi.encodePacked(tx.gasprice, block.timestamp))) % 256;
-}""",
-
-"""mapping(address => uint256) public airdropAmount;
-function claimRandomAirdrop() public {
-    airdropAmount[msg.sender] = uint256(keccak256(abi.encodePacked(blockhash(block.number - 1), msg.sender))) % 1000;
-}""",
-
-"""uint256 private hiddenNumber;
-function setHidden() public {
-    hiddenNumber = uint256(keccak256(abi.encodePacked(block.timestamp))) % 100;
-}
-function guessHidden(uint256 n) public view returns (bool) {
-    return n == hiddenNumber;
-}""",
-
-"""uint256 public reelResult;
-function pullLever() public {
-    reelResult = uint256(keccak256(abi.encodePacked(block.timestamp, block.number, blockhash(block.number - 1), gasleft())));
-}
-function isReelWin() public view returns (bool) {
-    return reelResult % 64 == 0;
-}""",
-]
-
-# ---------------------------------------------------------------------------
-# DoS — unbounded operations / failed-call-blocks-everyone (gas griefing).
-# Distinct mechanisms: push-payment loops, external call in loop, unbounded
-# growth + iterate, O(n) insert, array-shift removal, batch with single require.
+# DoS (0.8 dialect) — unbounded operations / failed-call-blocks-everyone.
+# Same archetypes as the 0.5 set; syntax updated for 0.8.
 # ---------------------------------------------------------------------------
 DOS = [
 """address payable[] public shareholders;
@@ -235,7 +112,7 @@ function submitScore(uint256 s) public {
 """address payable[] public bidders;
 mapping(address => uint256) public bidAmount;
 function placeAuctionBid() public payable {
-    bidders.push(msg.sender);
+    bidders.push(payable(msg.sender));
     bidAmount[msg.sender] += msg.value;
 }
 function closeAuction() public {
@@ -319,7 +196,7 @@ function joinMembers() public {
 }
 function rewardMembers() public {
     for (uint256 i = 0; i < members.length; i++) {
-        (bool ok, ) = members[i].call.value(1)("");
+        (bool ok, ) = members[i].call{value: 1}("");
         require(ok);
     }
 }""",
@@ -334,37 +211,140 @@ function batchMint(uint256 count) public {
 }""",
 ]
 
+# ---------------------------------------------------------------------------
+# Bad Randomness (0.8 dialect).
+# block.difficulty removed in 0.8.18 — snippet 6 uses blockhash entropy instead.
+# msg.sender.transfer() needs payable() cast in 0.8.
+# ---------------------------------------------------------------------------
+BAD_RANDOMNESS = [
+"""address payable[] public lotteryPlayers;
+uint256 public lotteryPot;
+function joinLottery() public payable {
+    lotteryPlayers.push(payable(msg.sender));
+    lotteryPot += msg.value;
+}
+function drawLotteryWinner() public {
+    uint256 idx = uint256(blockhash(block.number - 1)) % lotteryPlayers.length;
+    lotteryPlayers[idx].transfer(lotteryPot);
+    lotteryPot = 0;
+}""",
 
-def clear_tf(out_dir):
-    if os.path.isdir(out_dir):
-        for f in os.listdir(out_dir):
-            if f.endswith(".txt"):
-                os.remove(os.path.join(out_dir, f))
+"""mapping(address => uint256) public coinflipStake;
+function placeCoinflip() public payable {
+    coinflipStake[msg.sender] = msg.value;
+}
+function resolveCoinflip() public {
+    if (block.timestamp % 2 == 0) {
+        payable(msg.sender).transfer(coinflipStake[msg.sender] * 2);
+    }
+    coinflipStake[msg.sender] = 0;
+}""",
 
+"""uint256 public lastRoll;
+function rollDice() public returns (uint256) {
+    lastRoll = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender))) % 6 + 1;
+    return lastRoll;
+}""",
 
-def write_set(name, fragments):
-    out_dir = os.path.join(BUGS, name, "tf")
-    os.makedirs(out_dir, exist_ok=True)
-    clear_tf(out_dir)
-    for i, frag in enumerate(fragments, 1):
-        with open(os.path.join(out_dir, f"{i}.txt"), "w", newline="\n") as f:
-            f.write(frag.strip() + "\n")
-    print(f"wrote {len(fragments)} distinct snippets -> bugs/{name}/tf/")
+"""mapping(address => uint256) public boostedReward;
+function claimBoost(uint256 base) public {
+    uint256 factor = gasleft() % 5 + 1;
+    boostedReward[msg.sender] = base * factor;
+}""",
 
+"""uint256 public ticketCount;
+mapping(uint256 => address) public ticketOwner;
+function buyTicket() public {
+    ticketOwner[ticketCount] = msg.sender;
+    ticketCount += 1;
+}
+function pickRaffle() public view returns (address) {
+    return ticketOwner[block.number % ticketCount];
+}""",
+
+"""address public prizeWinner;
+function spinPrize() public {
+    if (uint256(blockhash(block.number - 1)) % 7 == 0) {
+        prizeWinner = msg.sender;
+    }
+}""",
+
+"""uint8 public drawnCard;
+function drawCard() public {
+    drawnCard = uint8(uint256(blockhash(block.number - 1)) % 52);
+}""",
+
+"""uint256 public jackpotSeed;
+function rollJackpot() public {
+    jackpotSeed = uint256(keccak256(abi.encodePacked(address(this).balance, block.timestamp)));
+}
+function isJackpotHit() public view returns (bool) {
+    return jackpotSeed % 1000 == 0;
+}""",
+
+"""mapping(address => bytes32) public sealedGuess;
+function commitGuess(bytes32 commitment) public {
+    sealedGuess[msg.sender] = commitment;
+}
+function revealOutcome() public view returns (bool) {
+    return sealedGuess[msg.sender] == blockhash(block.number - 1);
+}""",
+
+"""uint256 public rngState = 12345;
+function nextRandom() public returns (uint256) {
+    rngState = (rngState * 1103515245 + 12345) % 2147483648;
+    return rngState;
+}""",
+
+"""uint256 public mintedRarity;
+function mintRare() public {
+    mintedRarity = uint256(keccak256(abi.encodePacked(block.timestamp, block.number))) % 100;
+}""",
+
+"""uint256 public wheelSlot;
+function spinWheel() public {
+    wheelSlot = (block.timestamp / 15) % 12;
+}""",
+
+"""uint256 public gasSeed;
+function seedFromGas() public {
+    gasSeed = uint256(keccak256(abi.encodePacked(tx.gasprice, block.timestamp))) % 256;
+}""",
+
+"""mapping(address => uint256) public airdropAmount;
+function claimRandomAirdrop() public {
+    airdropAmount[msg.sender] = uint256(keccak256(abi.encodePacked(blockhash(block.number - 1), msg.sender))) % 1000;
+}""",
+
+"""uint256 private hiddenNumber;
+function setHidden() public {
+    hiddenNumber = uint256(keccak256(abi.encodePacked(block.timestamp))) % 100;
+}
+function guessHidden(uint256 n) public view returns (bool) {
+    return n == hiddenNumber;
+}""",
+
+"""uint256 public reelResult;
+function pullLever() public {
+    reelResult = uint256(keccak256(abi.encodePacked(block.timestamp, block.number, blockhash(block.number - 1), gasleft())));
+}
+function isReelWin() public view returns (bool) {
+    return reelResult % 64 == 0;
+}""",
+]
 
 # ---------------------------------------------------------------------------
-# Front Running / TOD (0.5 dialect) — adapts the v04 archetypes for 0.5.x:
-# - string/bytes params need `memory` keyword
-# - `address payable` must be explicit for variables that call .transfer()
-# - msg.sender is implicitly address payable in 0.5, so msg.sender.transfer() works
-# - .call() returns (bool, bytes memory) tuple (no tuple unpacking issues)
-# Written to bugs/TOD/tf/ so v05-v07 bases get 16 diverse templates instead of 0.
+# Front Running / TOD (0.8 dialect).
+# Same archetypes as the 0.4 set; syntax updated for 0.8:
+# - `string memory` / `bytes memory` params
+# - `payable(msg.sender).transfer()` (msg.sender is non-payable address in 0.8)
+# - `payable(highestBidder).transfer()` (address variables need explicit cast)
 # ---------------------------------------------------------------------------
 TOD = [
 """bytes32 constant rewardHash = 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef;
 function submitAnswer(string memory answer) public {
     if (keccak256(abi.encodePacked(answer)) == rewardHash) {
-        msg.sender.transfer(address(this).balance);
+        payable(msg.sender).transfer(address(this).balance);
     }
 }""",
 
@@ -372,7 +352,7 @@ function submitAnswer(string memory answer) public {
 function claimBounty() public {
     require(!bountyClaimed);
     bountyClaimed = true;
-    msg.sender.transfer(address(this).balance);
+    payable(msg.sender).transfer(address(this).balance);
 }""",
 
 """uint256 public itemPrice;
@@ -386,11 +366,11 @@ function buyItem() public payable {
 }""",
 
 """uint256 public highestBid;
-address payable public highestBidder;
+address public highestBidder;
 function bid() public payable {
     require(msg.value > highestBid);
     if (highestBidder != address(0)) {
-        highestBidder.transfer(highestBid);
+        payable(highestBidder).transfer(highestBid);
     }
     highestBid = msg.value;
     highestBidder = msg.sender;
@@ -414,7 +394,7 @@ function grabAirdrop() public {
     require(!airdropTaken[msg.sender]);
     airdropTaken[msg.sender] = true;
     airdropRemaining -= 1;
-    msg.sender.transfer(1 ether);
+    payable(msg.sender).transfer(1 ether);
 }""",
 
 """uint256 public mintsLeft;
@@ -431,7 +411,7 @@ function solvePuzzle(uint256 solution) public {
     require(!puzzleSolved);
     require(solution * solution == 144);
     puzzleSolved = true;
-    msg.sender.transfer(puzzleReward);
+    payable(msg.sender).transfer(puzzleReward);
 }""",
 
 """mapping(address => uint256) public collateral;
@@ -441,7 +421,7 @@ function liquidate(address user) public {
     uint256 bonus = collateral[user];
     collateral[user] = 0;
     debt[user] = 0;
-    msg.sender.transfer(bonus);
+    payable(msg.sender).transfer(bonus);
 }""",
 
 """mapping(bytes32 => bool) public codeUsed;
@@ -449,7 +429,7 @@ function redeemCode(string memory code) public {
     bytes32 h = keccak256(abi.encodePacked(code));
     require(!codeUsed[h]);
     codeUsed[h] = true;
-    msg.sender.transfer(0.1 ether);
+    payable(msg.sender).transfer(0.1 ether);
 }""",
 
 """mapping(bytes32 => address) public nameOwner;
@@ -485,7 +465,7 @@ function setCommit(bytes32 c) public {
 }
 function revealSecret(string memory secret) public {
     require(keccak256(abi.encodePacked(secret)) == secretCommit);
-    msg.sender.transfer(revealReward);
+    payable(msg.sender).transfer(revealReward);
 }""",
 
 """uint256 public counter;
@@ -494,7 +474,7 @@ function increment() public {
     counter += 1;
     if (counter == 100) {
         champion = msg.sender;
-        msg.sender.transfer(address(this).balance);
+        payable(msg.sender).transfer(address(this).balance);
     }
 }""",
 
@@ -507,30 +487,32 @@ function withdrawPayout() public {
     require(payoutOpen);
     uint256 amount = payoutPool;
     payoutPool = 0;
-    msg.sender.transfer(amount);
+    payable(msg.sender).transfer(amount);
 }""",
 ]
+
+
+def clear_tf(out_dir):
+    if os.path.isdir(out_dir):
+        for f in os.listdir(out_dir):
+            if f.endswith(".txt"):
+                os.remove(os.path.join(out_dir, f))
+
+
+def write_set(name, fragments):
+    out_dir = os.path.join(BUGS, name, "v08", "tf")
+    os.makedirs(out_dir, exist_ok=True)
+    clear_tf(out_dir)
+    for i, frag in enumerate(fragments, 1):
+        with open(os.path.join(out_dir, f"{i}.txt"), "w", newline="\n") as f:
+            f.write(frag.strip() + "\n")
+    print(f"wrote {len(fragments)} distinct snippets -> bugs/{name}/v08/tf/")
 
 
 def main():
     write_set("DoS", DOS)
     write_set("Bad-Randomness", BAD_RANDOMNESS)
     write_set("TOD", TOD)
-
-    conf = os.path.join(SOLIDIFI, "bug_types.conf")
-    with open(conf) as f:
-        text = f.read()
-    additions = ""
-    if "bug_type=DoS" not in text:
-        additions += "\n[8]\nbug_type_id=8\nbug_type=DoS\nbug_type_dir=DoS\n"
-    if "bug_type=Bad-Randomness" not in text:
-        additions += "\n[9]\nbug_type_id=9\nbug_type=Bad-Randomness\nbug_type_dir=Bad-Randomness\n"
-    if additions:
-        with open(conf, "a") as f:
-            f.write(additions)
-        print("appended bug_types.conf entries:", additions.strip().replace("\n", " "))
-    else:
-        print("bug_types.conf already has DoS/Bad-Randomness")
 
 
 if __name__ == "__main__":
